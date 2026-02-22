@@ -97,7 +97,7 @@ custom_css = """
 <style>
     #MainMenu {visibility: hidden;}
     [data-testid="stDeployButton"] {display:none;}
-    [data-testid="stToolbar"] {visibility: hidden !important;}
+    [data-testid="stToolbar"] {visibility: hidden !important;} 
     footer {visibility: hidden;}
 
     .custom-banner {
@@ -142,6 +142,34 @@ custom_css = """
         padding: 20px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         border: 1px solid #f0f2f6;
+    }
+
+    /* --- โค้ดที่เพิ่มใหม่: ตกแต่งกล่อง Input และ Dateให้ดู Modern --- */
+    .stTextInput > div > div > input, 
+    .stDateInput > div > div > input, 
+    .stTextArea > div > div > textarea {
+        background-color: #f8f9fc !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 10px !important;
+        padding: 10px 15px !important;
+        font-size: 16px !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    /* Effect เรืองแสงตอนคลิกพิมพ์ */
+    .stTextInput > div > div > input:focus, 
+    .stDateInput > div > div > input:focus, 
+    .stTextArea > div > div > textarea:focus {
+        border-color: #00796B !important;
+        box-shadow: 0 0 0 3px rgba(0, 121, 107, 0.15) !important;
+        background-color: #ffffff !important;
+    }
+    
+    /* ปรับแต่ง Label หัวข้อให้ดูโปรขึ้น */
+    .stTextArea label, .stDateInput label {
+        font-weight: 600 !important;
+        color: #2c3e50 !important;
+        margin-bottom: 5px !important;
     }
 </style>
 """
@@ -226,10 +254,9 @@ if menu == "🎓 ออกเกียรติบัตร":
     """, unsafe_allow_html=True)
     
     with st.container(border=True):
-        st.markdown("#### 📝 กำหนดข้อมูลหลักสูตร (ใช้ร่วมกันทุกใบ)")
         col1, col2 = st.columns([2, 1])
-        course_name = col1.text_area("หัวข้อการอบรม (กด Enter พิมพ์หลายบรรทัดได้):", height=100)
-        issue_date = col2.date_input("วันที่ให้เกียรติบัตร:")
+        course_name = col1.text_area("📌 หัวข้อการอบรม (กด Enter พิมพ์หลายบรรทัดได้):", height=115, help="พิมพ์ชื่อหลักสูตร หรือรายละเอียดที่ต้องการให้ปรากฏกลางเกียรติบัตร")
+        issue_date = col2.date_input("🗓️ กำหนดวันที่ให้เกียรติบัตร:", help="คลิกที่ไอคอนปฏิทินมุมขวาของกล่อง เพื่อเลือกวันที่อย่างรวดเร็ว")
         date_str_formatted = issue_date.strftime('%d/%m/%Y')
     
     st.write("") 
@@ -239,7 +266,7 @@ if menu == "🎓 ออกเกียรติบัตร":
     with tab1:
         with st.container(border=True):
             st.markdown("#### 🖨️ ออกเอกสารเฉพาะบุคคล")
-            single_name = st.text_input("ชื่อ-นามสกุล ผู้เข้ารับการอบรม:")
+            single_name = st.text_input("👤 ชื่อ-นามสกุล ผู้เข้ารับการอบรม:")
             if st.button("✨ สร้างเกียรติบัตร", type="primary"): 
                 if single_name and course_name:
                     try:
@@ -280,7 +307,6 @@ if menu == "🎓 ออกเกียรติบัตร":
                 else:
                     st.success(f"✅ โหลดไฟล์สำเร็จ! พบผู้เข้าอบรมทั้งหมด: **{len(df)}** ท่าน")
                     
-                    # 🌟 ส่วนที่เพิ่มขึ้นมา: แสดงตารางพรีวิว 5 แถวแรก
                     st.markdown("**📋 ตารางตัวอย่างรายชื่อจากไฟล์ Excel:**")
                     st.dataframe(df.head(5), use_container_width=True)
                     
@@ -306,13 +332,12 @@ if menu == "🎓 ออกเกียรติบัตร":
                         zip_buffer = io.BytesIO()
                         
                         try:
-                            # 🌟 แก้ไข: ดึงข้อมูลและนับเลขจาก Sheet มารอไว้ "ครั้งเดียว"
                             sheet = get_records_sheet()
                             records = sheet.get_all_records()
                             prefix = f"CERT-{datetime.datetime.now().strftime('%Y%m')}"
                             current_count = sum(1 for r in records if str(r.get('serial_number', '')).startswith(prefix))
                             
-                            new_db_rows = [] # เตรียมตะกร้าเก็บข้อมูลใหม่
+                            new_db_rows = [] 
                             
                             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                                 total_rows = len(df)
@@ -320,15 +345,12 @@ if menu == "🎓 ออกเกียรติบัตร":
                                     name = str(row['Name']).strip()
                                     if not name or name == "nan": continue 
                                     
-                                    # บวกเลขรันเองในระบบ ไม่ต้องวิ่งไปถาม Sheet
                                     current_count += 1
                                     serial = f"{prefix}-{current_count:04d}"
                                     
-                                    # เอาข้อมูลใส่ตะกร้าเตรียมส่งทีเดียว
                                     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                     new_db_rows.append([serial, name, course_name, str(issue_date), timestamp])
                                     
-                                    # วาดรูปตามปกติ
                                     img = create_certificate_image("template.png", "THSarabunNew.ttf", name, course_name, date_str_formatted, serial)
                                     
                                     img_buffer = io.BytesIO()
@@ -343,7 +365,6 @@ if menu == "🎓 ออกเกียรติบัตร":
                                     percent_complete = int(((index + 1) / total_rows) * 100)
                                     my_bar.progress(percent_complete, text=f"กำลังสร้าง: {name} ({index+1}/{total_rows})")
                             
-                            # 🌟 แก้ไข: ส่งข้อมูลในตะกร้าขึ้น Sheet รวดเดียวจบ
                             if new_db_rows:
                                 my_bar.progress(99, text="กำลังอัปเดตฐานข้อมูล Google Sheets...")
                                 sheet.append_rows(new_db_rows)
@@ -418,5 +439,4 @@ elif menu == "🔑 เปลี่ยนรหัสผ่าน":
                         break
                 
                 if not found:
-
                     st.error("❌ รหัสผ่านเดิมไม่ถูกต้อง!")
