@@ -248,16 +248,13 @@ if menu == "🎓 ออกเกียรติบัตร":
                         st.success(f"✅ บันทึกข้อมูลลง Google Sheets สำเร็จ! รหัสอ้างอิง: {serial}")
                         st.image(img, caption=f"ภาพตัวอย่างของ {single_name}", use_container_width=True)
                         
-                        # สร้าง Buffer สำหรับ PNG
                         buf_png = io.BytesIO()
                         img.save(buf_png, format="PNG")
                         
-                        # สร้าง Buffer สำหรับ PDF (ต้องแปลงโหมดสีก่อนเซฟเป็น PDF)
                         buf_pdf = io.BytesIO()
                         img_pdf = img.convert('RGB')
                         img_pdf.save(buf_pdf, format="PDF", resolution=100.0)
                         
-                        # แสดงปุ่มดาวน์โหลด 2 แบบคู่กัน
                         dl_col1, dl_col2 = st.columns(2)
                         with dl_col1:
                             st.download_button("📩 ดาวน์โหลดเป็นไฟล์รูปภาพ (PNG)", data=buf_png.getvalue(), file_name=f"Certificate_{serial}_{single_name}.png", mime="image/png", use_container_width=True)
@@ -282,6 +279,10 @@ if menu == "🎓 ออกเกียรติบัตร":
                 else:
                     st.success(f"✅ โหลดไฟล์สำเร็จ! พบผู้เข้าอบรมทั้งหมด: **{len(df)}** ท่าน")
                     
+                    # 🌟 ส่วนที่เพิ่มขึ้นมา: แสดงตารางพรีวิว 5 แถวแรก
+                    st.markdown("**📋 ตารางตัวอย่างรายชื่อจากไฟล์ Excel:**")
+                    st.dataframe(df.head(5), use_container_width=True)
+                    
                     st.divider()
                     st.markdown("##### เลือกรูปแบบไฟล์เกียรติบัตรที่จะอยู่ในไฟล์ ZIP:")
                     export_format = st.radio("รูปแบบไฟล์:", ["📄 ไฟล์เอกสาร PDF (แนะนำสำหรับการสั่งพิมพ์)", "🖼️ ไฟล์รูปภาพ PNG (แนะนำสำหรับส่งต่อผ่าน Social/LINE)"], horizontal=True, label_visibility="collapsed")
@@ -299,19 +300,34 @@ if menu == "🎓 ออกเกียรติบัตร":
                     
                     st.divider()
                     if st.button("🚀 แพ็กรายชื่อทั้งหมดเป็นไฟล์ ZIP", type="primary", use_container_width=True):
-                        progress_text = "กำลังสร้างและบันทึกข้อมูลลง Google Sheets..."
+                        progress_text = "กำลังสร้างและแพ็กไฟล์... (กรุณารอสักครู่)"
                         my_bar = st.progress(0, text=progress_text)
                         zip_buffer = io.BytesIO()
                         
                         try:
+                            # 🌟 แก้ไข: ดึงข้อมูลและนับเลขจาก Sheet มารอไว้ "ครั้งเดียว"
+                            sheet = get_records_sheet()
+                            records = sheet.get_all_records()
+                            prefix = f"CERT-{datetime.datetime.now().strftime('%Y%m')}"
+                            current_count = sum(1 for r in records if str(r.get('serial_number', '')).startswith(prefix))
+                            
+                            new_db_rows = [] # เตรียมตะกร้าเก็บข้อมูลใหม่
+                            
                             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                                 total_rows = len(df)
                                 for index, row in df.iterrows():
                                     name = str(row['Name']).strip()
                                     if not name or name == "nan": continue 
                                     
-                                    serial = generate_serial()
-                                    save_to_db(serial, name, course_name, str(issue_date))
+                                    # บวกเลขรันเองในระบบ ไม่ต้องวิ่งไปถาม Sheet
+                                    current_count += 1
+                                    serial = f"{prefix}-{current_count:04d}"
+                                    
+                                    # เอาข้อมูลใส่ตะกร้าเตรียมส่งทีเดียว
+                                    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                    new_db_rows.append([serial, name, course_name, str(issue_date), timestamp])
+                                    
+                                    # วาดรูปตามปกติ
                                     img = create_certificate_image("template.png", "THSarabunNew.ttf", name, course_name, date_str_formatted, serial)
                                     
                                     img_buffer = io.BytesIO()
@@ -326,6 +342,11 @@ if menu == "🎓 ออกเกียรติบัตร":
                                     percent_complete = int(((index + 1) / total_rows) * 100)
                                     my_bar.progress(percent_complete, text=f"กำลังสร้าง: {name} ({index+1}/{total_rows})")
                             
+                            # 🌟 แก้ไข: ส่งข้อมูลในตะกร้าขึ้น Sheet รวดเดียวจบ
+                            if new_db_rows:
+                                my_bar.progress(99, text="กำลังอัปเดตฐานข้อมูล Google Sheets...")
+                                sheet.append_rows(new_db_rows)
+                                
                             my_bar.empty()
                             st.success("🎉 บันทึกข้อมูลและแพ็กไฟล์เสร็จสมบูรณ์!")
                             st.download_button("⬇️ คลิกที่นี่เพื่อดาวน์โหลดไฟล์ ZIP", data=zip_buffer.getvalue(), file_name=f"Certificates_{issue_date}.zip", mime="application/zip", use_container_width=True, type="primary")
