@@ -22,11 +22,9 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        # ตรวจสอบว่ามีข้อมูลกุญแจใน Streamlit Secrets (บน Cloud) หรือไม่
         if "GCP_CREDENTIALS" in st.secrets:
             creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        # ถ้าไม่มี แสดงว่ารันในคอมพิวเตอร์ Local ให้หาไฟล์ .json
         else:
             creds = Credentials.from_service_account_file("service_account.json", scopes=scopes)
         return gspread.authorize(creds)
@@ -250,9 +248,22 @@ if menu == "🎓 ออกเกียรติบัตร":
                         st.success(f"✅ บันทึกข้อมูลลง Google Sheets สำเร็จ! รหัสอ้างอิง: {serial}")
                         st.image(img, caption=f"ภาพตัวอย่างของ {single_name}", use_container_width=True)
                         
-                        buf = io.BytesIO()
-                        img.save(buf, format="PNG")
-                        st.download_button("📩 ดาวน์โหลดภาพนี้ (PNG)", data=buf.getvalue(), file_name=f"Certificate_{serial}_{single_name}.png", mime="image/png", use_container_width=True)
+                        # สร้าง Buffer สำหรับ PNG
+                        buf_png = io.BytesIO()
+                        img.save(buf_png, format="PNG")
+                        
+                        # สร้าง Buffer สำหรับ PDF (ต้องแปลงโหมดสีก่อนเซฟเป็น PDF)
+                        buf_pdf = io.BytesIO()
+                        img_pdf = img.convert('RGB')
+                        img_pdf.save(buf_pdf, format="PDF", resolution=100.0)
+                        
+                        # แสดงปุ่มดาวน์โหลด 2 แบบคู่กัน
+                        dl_col1, dl_col2 = st.columns(2)
+                        with dl_col1:
+                            st.download_button("📩 ดาวน์โหลดเป็นไฟล์รูปภาพ (PNG)", data=buf_png.getvalue(), file_name=f"Certificate_{serial}_{single_name}.png", mime="image/png", use_container_width=True)
+                        with dl_col2:
+                            st.download_button("📄 ดาวน์โหลดเป็นเอกสาร (PDF)", data=buf_pdf.getvalue(), file_name=f"Certificate_{serial}_{single_name}.pdf", mime="application/pdf", use_container_width=True)
+
                     except Exception as e:
                         st.error(f"❌ เกิดข้อผิดพลาด: {e}")
                 else:
@@ -263,23 +274,31 @@ if menu == "🎓 ออกเกียรติบัตร":
         with st.container(border=True):
             st.markdown("#### 📦 ระบบสร้างเกียรติบัตรแบบกลุ่ม (Batch Processing)")
             uploaded_file = st.file_uploader("ลากไฟล์ Excel มาวางตรงนี้ (ต้องมีคอลัมน์ Name)", type=["xlsx"])
+            
             if uploaded_file and course_name:
                 df = pd.read_excel(uploaded_file)
                 if 'Name' not in df.columns:
                     st.error("❌ ระบบหาคอลัมน์คำว่า 'Name' ไม่เจอครับ")
                 else:
                     st.success(f"✅ โหลดไฟล์สำเร็จ! พบผู้เข้าอบรมทั้งหมด: **{len(df)}** ท่าน")
-                    st.divider()
-                    if st.button("🔎 ดูภาพตัวอย่าง (รายชื่อที่ 1)"):
-                        try:
-                            preview_name = str(df.iloc[0]['Name']).strip()
-                            img_preview = create_certificate_image("template.png", "THSarabunNew.ttf", preview_name, course_name, date_str_formatted, "CERT-PREVIEW-001")
-                            st.image(img_preview, caption="ตัวอย่างภาพที่จะได้รับ", use_container_width=True)
-                        except Exception as e:
-                            st.error(f"เกิดข้อผิดพลาด: {e}")
                     
                     st.divider()
-                    if st.button("แพ็กรายชื่อทั้งหมดเป็นไฟล์ ZIP", type="primary", use_container_width=True):
+                    st.markdown("##### เลือกรูปแบบไฟล์เกียรติบัตรที่จะอยู่ในไฟล์ ZIP:")
+                    export_format = st.radio("รูปแบบไฟล์:", ["📄 ไฟล์เอกสาร PDF (แนะนำสำหรับการสั่งพิมพ์)", "🖼️ ไฟล์รูปภาพ PNG (แนะนำสำหรับส่งต่อผ่าน Social/LINE)"], horizontal=True, label_visibility="collapsed")
+                    
+                    st.divider()
+                    col_p1, col_p2 = st.columns([1, 2])
+                    with col_p1:
+                        if st.button("🔎 ดูภาพตัวอย่าง (รายชื่อที่ 1)"):
+                            try:
+                                preview_name = str(df.iloc[0]['Name']).strip()
+                                img_preview = create_certificate_image("template.png", "THSarabunNew.ttf", preview_name, course_name, date_str_formatted, "CERT-PREVIEW-001")
+                                st.image(img_preview, caption="ตัวอย่างการจัดวาง", use_container_width=True)
+                            except Exception as e:
+                                st.error(f"เกิดข้อผิดพลาด: {e}")
+                    
+                    st.divider()
+                    if st.button("🚀 แพ็กรายชื่อทั้งหมดเป็นไฟล์ ZIP", type="primary", use_container_width=True):
                         progress_text = "กำลังสร้างและบันทึกข้อมูลลง Google Sheets..."
                         my_bar = st.progress(0, text=progress_text)
                         zip_buffer = io.BytesIO()
@@ -296,8 +315,13 @@ if menu == "🎓 ออกเกียรติบัตร":
                                     img = create_certificate_image("template.png", "THSarabunNew.ttf", name, course_name, date_str_formatted, serial)
                                     
                                     img_buffer = io.BytesIO()
-                                    img.save(img_buffer, format="PNG")
-                                    zip_file.writestr(f"Certificate_{serial}_{name}.png", img_buffer.getvalue())
+                                    if "PDF" in export_format:
+                                        img_pdf = img.convert('RGB')
+                                        img_pdf.save(img_buffer, format="PDF", resolution=100.0)
+                                        zip_file.writestr(f"Certificate_{serial}_{name}.pdf", img_buffer.getvalue())
+                                    else:
+                                        img.save(img_buffer, format="PNG")
+                                        zip_file.writestr(f"Certificate_{serial}_{name}.png", img_buffer.getvalue())
                                     
                                     percent_complete = int(((index + 1) / total_rows) * 100)
                                     my_bar.progress(percent_complete, text=f"กำลังสร้าง: {name} ({index+1}/{total_rows})")
