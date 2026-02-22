@@ -97,6 +97,7 @@ custom_css = """
 <style>
     #MainMenu {visibility: hidden;}
     [data-testid="stDeployButton"] {display:none;}
+    [data-testid="stToolbar"] {visibility: hidden !important;}
     footer {visibility: hidden;}
 
     .custom-banner {
@@ -417,4 +418,5 @@ elif menu == "🔑 เปลี่ยนรหัสผ่าน":
                         break
                 
                 if not found:
+
                     st.error("❌ รหัสผ่านเดิมไม่ถูกต้อง!")
