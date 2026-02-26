@@ -22,11 +22,9 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        # เช็คไฟล์ในเครื่องก่อน (Local)
         if os.path.exists("service_account.json"):
             creds = Credentials.from_service_account_file("service_account.json", scopes=scopes)
         else:
-            # เช็คใน Secrets (Cloud)
             try:
                 if "GCP_CREDENTIALS" in st.secrets:
                     creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
@@ -103,7 +101,6 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
     left, top, right, bottom = draw.textbbox((0, 0), name, font=font_name)
     w = right - left
     h = bottom - top
-    # name_y_adjust รับค่าได้ถึง +/- 1000 แล้ว
     name_y = ((H - h) / 2) - 80 + name_y_adjust 
     draw.text(((W - w) / 2, name_y), name, font=font_name, fill=(0, 0, 0))
     
@@ -191,7 +188,7 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 # ==========================================
-# 🌟 เมนู Sidebar & การตั้งค่า Font
+# 🌟 เมนู Sidebar
 # ==========================================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80) 
@@ -213,15 +210,13 @@ with st.sidebar:
         st.markdown("### 🔠 2. ตั้งค่าตัวอักษร")
         
         st.caption("👤 **ส่วนชื่อ-นามสกุล**")
-        name_font_size = st.slider("ขนาดชื่อ:", 50, 300, 100) # เพิ่มขนาดสูงสุดเป็น 300
+        name_font_size = st.slider("ขนาดชื่อ:", 50, 300, 100)
         name_is_bold = st.checkbox("ตัวหนา (Bold)", value=True)
-        # 🟢 จุดที่แก้: เพิ่มระยะเลื่อนเป็น +/- 1000 (ครอบคลุมทั้งหน้ากระดาษ)
         name_y_adjust = st.slider("เลื่อนตำแหน่งชื่อ (Y):", -1000, 1000, 0, help="ลบ=ขึ้นบน, บวก=ลงล่าง")
         
         st.caption("📝 **ส่วนรายละเอียดหลักสูตร**")
-        course_font_size = st.slider("ขนาดรายละเอียด:", 30, 150, 50) # เพิ่มขนาดสูงสุดเป็น 150
-        # 🟢 จุดที่แก้: เพิ่มระยะเลื่อนเป็น +/- 500
-        course_y_adjust = st.slider("ระยะห่างจากชื่อ (Y):", -500, 500, 0, help="ปรับระยะห่างระหว่างชื่อกับรายละเอียด")
+        course_font_size = st.slider("ขนาดรายละเอียด:", 30, 150, 50)
+        course_y_adjust = st.slider("ระยะห่างจากชื่อ (Y):", -500, 500, 0)
 
 # ==========================================
 # 5. หน้าจอออกเกียรติบัตร
@@ -235,94 +230,134 @@ if menu == "🎓 ออกเกียรติบัตร":
         issue_date = col2.date_input("🗓️ วันที่:")
         date_str_formatted = issue_date.strftime('%d/%m/%Y')
     
-    tab1, tab2 = st.tabs(["👤 รายบุคคล (Preview)", "📁 แบบกลุ่ม (Excel Batch)"])
+    tab1, tab2 = st.tabs(["👤 รายบุคคล (Preview & Save)", "📁 แบบกลุ่ม (Excel Batch)"])
     
     # --- Tab 1: Single ---
     with tab1:
         single_name = st.text_input("ชื่อ-นามสกุล ผู้รับ:")
-        if st.button("✨ ดูตัวอย่าง / สร้างไฟล์", type="primary"):
-            if single_name and course_name:
-                img = create_certificate_image(
-                    current_template, single_name, course_name, date_str_formatted, "PREVIEW-001",
-                    name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
-                )
-                
-                if img:
-                    st.image(img, caption="ภาพตัวอย่าง (ปรับแก้ที่เมนูซ้ายมือ)", use_container_width=True)
-                    
-                    col_save, col_cancel = st.columns([1,2])
-                    with col_save:
-                        if st.button("💾 ยืนยันบันทึกข้อมูล"):
-                            try:
-                                serial = generate_serial()
-                                save_to_db(serial, single_name, course_name, str(issue_date))
-                                img_final = create_certificate_image(
-                                    current_template, single_name, course_name, date_str_formatted, serial,
-                                    name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
-                                )
-                                st.success(f"✅ บันทึกสำเร็จ! Ref: {serial}")
-                                
-                                buf_png = io.BytesIO()
-                                img_final.save(buf_png, format="PNG")
-                                st.download_button("📩 โหลดภาพ (PNG)", data=buf_png.getvalue(), file_name=f"{serial}.png", mime="image/png")
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-            else:
-                st.warning("กรุณากรอกข้อมูลให้ครบครับ")
-
-    # --- Tab 2: Batch ---
-    with tab2:
-        st.info("💡 การสร้างแบบกลุ่ม จะใช้การตั้งค่าฟอนต์และตำแหน่งจากเมนูซ้ายมือ ณ ขณะนี้")
-        uploaded_excel = st.file_uploader("Upload Excel (ต้องมีช่อง Name)", type=["xlsx"])
         
-        if uploaded_excel and st.button("🚀 รันระบบ Batch (สร้างไฟล์ ZIP)"):
-            df = pd.read_excel(uploaded_excel)
-            if 'Name' not in df.columns:
-                st.error("❌ ไม่พบคอลัมน์ 'Name'")
-            else:
-                progress_bar = st.progress(0)
-                zip_buffer = io.BytesIO()
-                new_db_rows = []
-                
-                sheet = get_records_sheet()
-                records = sheet.get_all_records()
-                prefix = f"CERT-{datetime.datetime.now().strftime('%Y%m')}"
-                current_count = sum(1 for r in records if str(r.get('serial_number', '')).startswith(prefix))
-                
-                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                    total = len(df)
-                    for i, row in df.iterrows():
-                        name = str(row['Name']).strip()
-                        if not name or name == "nan": continue
+        # 🟢 ตัวเลือกไฟล์ (Checkbox)
+        st.write("เลือกประเภทไฟล์ที่ต้องการดาวน์โหลด:")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1: need_png = st.checkbox("ไฟล์รูปภาพ (PNG)", value=True, key="s_png")
+        with col_c2: need_pdf = st.checkbox("ไฟล์เอกสาร (PDF)", value=False, key="s_pdf")
+
+        col_preview, col_save = st.columns(2)
+        
+        # 1. Preview
+        with col_preview:
+            if st.button("✨ ดูตัวอย่าง (Preview)", use_container_width=True):
+                if single_name and course_name:
+                    img = create_certificate_image(
+                        current_template, single_name, course_name, date_str_formatted, "PREVIEW-001",
+                        name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
+                    )
+                    st.image(img, caption="ภาพตัวอย่าง (ยังไม่บันทึก)", use_container_width=True)
+                else:
+                    st.warning("กรุณากรอกข้อมูลให้ครบ")
+
+        # 2. Save
+        with col_save:
+            if st.button("💾 บันทึกและสร้างไฟล์จริง", type="primary", use_container_width=True):
+                if not need_png and not need_pdf:
+                    st.warning("⚠️ กรุณาเลือกประเภทไฟล์อย่างน้อย 1 อย่างครับ (PNG หรือ PDF)")
+                elif single_name and course_name:
+                    try:
+                        serial = generate_serial()
+                        save_to_db(serial, single_name, course_name, str(issue_date))
                         
-                        current_count += 1
-                        serial = f"{prefix}-{current_count:04d}"
-                        
-                        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        new_db_rows.append([serial, name, course_name, str(issue_date), timestamp])
-                        
-                        if uploaded_template:
-                            uploaded_template.seek(0)
-                            tmpl = uploaded_template
-                        else:
-                            tmpl = current_template
-                            
-                        img = create_certificate_image(
-                            tmpl, name, course_name, date_str_formatted, serial,
+                        img_final = create_certificate_image(
+                            current_template, single_name, course_name, date_str_formatted, serial,
                             name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
                         )
                         
-                        img_buf = io.BytesIO()
-                        img.save(img_buf, format="PNG")
-                        zip_file.writestr(f"{serial}_{name}.png", img_buf.getvalue())
+                        st.success(f"✅ บันทึกสำเร็จ! Ref: {serial}")
                         
-                        progress_bar.progress((i + 1) / total, text=f"Creating: {name}")
-                
-                if new_db_rows:
-                    sheet.append_rows(new_db_rows)
-                
-                st.success("✅ เสร็จสิ้น!")
-                st.download_button("⬇️ ดาวน์โหลด ZIP", data=zip_buffer.getvalue(), file_name="Certificates.zip", mime="application/zip")
+                        # แสดงปุ่มตามที่ติ๊กเลือก
+                        if need_png:
+                            buf_png = io.BytesIO()
+                            img_final.save(buf_png, format="PNG")
+                            st.download_button("📩 ดาวน์โหลด (PNG)", data=buf_png.getvalue(), file_name=f"{serial}.png", mime="image/png", use_container_width=True)
+                        
+                        if need_pdf:
+                            buf_pdf = io.BytesIO()
+                            img_final.convert('RGB').save(buf_pdf, format="PDF")
+                            st.download_button("📄 ดาวน์โหลด (PDF)", data=buf_pdf.getvalue(), file_name=f"{serial}.pdf", mime="application/pdf", use_container_width=True)
+                        
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                else:
+                    st.warning("กรุณากรอกข้อมูลให้ครบ")
+
+    # --- Tab 2: Batch ---
+    with tab2:
+        st.info("💡 ระบบจะใช้การตั้งค่าฟอนต์จากเมนูซ้ายมือ")
+        uploaded_excel = st.file_uploader("Upload Excel (ต้องมีช่อง Name)", type=["xlsx"])
+        
+        # 🟢 ตัวเลือกไฟล์ (Checkbox) สำหรับ Batch
+        st.write("เลือกประเภทไฟล์ที่ต้องการใน ZIP (เลือกได้ทั้งคู่):")
+        col_b1, col_b2 = st.columns(2)
+        with col_b1: batch_png = st.checkbox("ไฟล์รูปภาพ (PNG)", value=True, key="b_png")
+        with col_b2: batch_pdf = st.checkbox("ไฟล์เอกสาร (PDF)", value=False, key="b_pdf")
+        
+        if uploaded_excel and st.button("🚀 รันระบบ Batch (สร้างไฟล์ ZIP)"):
+            if not batch_png and not batch_pdf:
+                 st.warning("⚠️ กรุณาเลือกประเภทไฟล์อย่างน้อย 1 อย่างครับ")
+            else:
+                df = pd.read_excel(uploaded_excel)
+                if 'Name' not in df.columns:
+                    st.error("❌ ไม่พบคอลัมน์ 'Name'")
+                else:
+                    progress_bar = st.progress(0)
+                    zip_buffer = io.BytesIO()
+                    new_db_rows = []
+                    
+                    sheet = get_records_sheet()
+                    records = sheet.get_all_records()
+                    prefix = f"CERT-{datetime.datetime.now().strftime('%Y%m')}"
+                    current_count = sum(1 for r in records if str(r.get('serial_number', '')).startswith(prefix))
+                    
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        total = len(df)
+                        for i, row in df.iterrows():
+                            name = str(row['Name']).strip()
+                            if not name or name == "nan": continue
+                            
+                            current_count += 1
+                            serial = f"{prefix}-{current_count:04d}"
+                            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            new_db_rows.append([serial, name, course_name, str(issue_date), timestamp])
+                            
+                            if uploaded_template:
+                                uploaded_template.seek(0)
+                                tmpl = uploaded_template
+                            else:
+                                tmpl = current_template
+                                
+                            img = create_certificate_image(
+                                tmpl, name, course_name, date_str_formatted, serial,
+                                name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
+                            )
+                            
+                            # บันทึกตามที่เลือก (PNG)
+                            if batch_png:
+                                img_buf = io.BytesIO()
+                                img.save(img_buf, format="PNG")
+                                zip_file.writestr(f"{serial}_{name}.png", img_buf.getvalue())
+
+                            # บันทึกตามที่เลือก (PDF)
+                            if batch_pdf:
+                                pdf_buf = io.BytesIO()
+                                img.convert('RGB').save(pdf_buf, format="PDF")
+                                zip_file.writestr(f"{serial}_{name}.pdf", pdf_buf.getvalue())
+                            
+                            progress_bar.progress((i + 1) / total, text=f"Creating: {name}")
+                    
+                    if new_db_rows:
+                        sheet.append_rows(new_db_rows)
+                    
+                    st.success("✅ เสร็จสิ้น!")
+                    st.download_button("⬇️ ดาวน์โหลด ZIP", data=zip_buffer.getvalue(), file_name="Certificates.zip", mime="application/zip")
 
 # ==========================================
 # 6. Admin & Other Menus
