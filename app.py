@@ -22,9 +22,11 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
+        # เช็คไฟล์ในเครื่องก่อน (Local)
         if os.path.exists("service_account.json"):
             creds = Credentials.from_service_account_file("service_account.json", scopes=scopes)
         else:
+            # เช็คใน Secrets (Cloud)
             try:
                 if "GCP_CREDENTIALS" in st.secrets:
                     creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
@@ -61,7 +63,7 @@ def save_to_db(serial, name, course, date):
     sheet.append_row([serial, name, course, date, timestamp])
 
 # ==========================================
-# 2. ฟังก์ชันวาดภาพ (เพิ่ม course_y_adjust)
+# 2. ฟังก์ชันวาดภาพ
 # ==========================================
 def create_certificate_image(template_source, name, course_name, date_str, serial,
                              name_size, course_size, name_y_adjust, course_y_adjust, is_name_bold):
@@ -101,13 +103,12 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
     left, top, right, bottom = draw.textbbox((0, 0), name, font=font_name)
     w = right - left
     h = bottom - top
-    # คำนวณตำแหน่ง Y + ค่าปรับเลื่อน (name_y_adjust)
+    # name_y_adjust รับค่าได้ถึง +/- 1000 แล้ว
     name_y = ((H - h) / 2) - 80 + name_y_adjust 
     draw.text(((W - w) / 2, name_y), name, font=font_name, fill=(0, 0, 0))
     
     # --- วาดรายละเอียด (Course) ---
     lines = course_name.split('\n')
-    # ระยะห่างจากชื่อคนลงมา (Auto ตามขนาดฟอนต์) + ค่าปรับเลื่อนรายละเอียด (course_y_adjust)
     current_y = name_y + name_size + 20 + course_y_adjust
     
     for line in lines:
@@ -212,15 +213,15 @@ with st.sidebar:
         st.markdown("### 🔠 2. ตั้งค่าตัวอักษร")
         
         st.caption("👤 **ส่วนชื่อ-นามสกุล**")
-        name_font_size = st.slider("ขนาดชื่อ:", 50, 200, 100)
+        name_font_size = st.slider("ขนาดชื่อ:", 50, 300, 100) # เพิ่มขนาดสูงสุดเป็น 300
         name_is_bold = st.checkbox("ตัวหนา (Bold)", value=True)
-        # Slider เลื่อนชื่อ (Y)
-        name_y_adjust = st.slider("เลื่อนตำแหน่งชื่อ (Y):", -200, 200, 0, help="ลบ=ขึ้นบน, บวก=ลงล่าง")
+        # 🟢 จุดที่แก้: เพิ่มระยะเลื่อนเป็น +/- 1000 (ครอบคลุมทั้งหน้ากระดาษ)
+        name_y_adjust = st.slider("เลื่อนตำแหน่งชื่อ (Y):", -1000, 1000, 0, help="ลบ=ขึ้นบน, บวก=ลงล่าง")
         
         st.caption("📝 **ส่วนรายละเอียดหลักสูตร**")
-        course_font_size = st.slider("ขนาดรายละเอียด:", 30, 100, 50)
-        # Slider เลื่อนรายละเอียด (Y Adjustment)
-        course_y_adjust = st.slider("ระยะห่างจากชื่อ (Y):", -100, 100, 0, help="ปรับระยะห่างระหว่างชื่อกับรายละเอียด")
+        course_font_size = st.slider("ขนาดรายละเอียด:", 30, 150, 50) # เพิ่มขนาดสูงสุดเป็น 150
+        # 🟢 จุดที่แก้: เพิ่มระยะเลื่อนเป็น +/- 500
+        course_y_adjust = st.slider("ระยะห่างจากชื่อ (Y):", -500, 500, 0, help="ปรับระยะห่างระหว่างชื่อกับรายละเอียด")
 
 # ==========================================
 # 5. หน้าจอออกเกียรติบัตร
@@ -241,7 +242,6 @@ if menu == "🎓 ออกเกียรติบัตร":
         single_name = st.text_input("ชื่อ-นามสกุล ผู้รับ:")
         if st.button("✨ ดูตัวอย่าง / สร้างไฟล์", type="primary"):
             if single_name and course_name:
-                # ส่งค่า Setting ใหม่ (course_y_adjust) เข้าไปด้วย
                 img = create_certificate_image(
                     current_template, single_name, course_name, date_str_formatted, "PREVIEW-001",
                     name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
@@ -307,7 +307,6 @@ if menu == "🎓 ออกเกียรติบัตร":
                         else:
                             tmpl = current_template
                             
-                        # สร้างภาพโดยใช้ค่าปรับตำแหน่งจาก Sidebar
                         img = create_certificate_image(
                             tmpl, name, course_name, date_str_formatted, serial,
                             name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
