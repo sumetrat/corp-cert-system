@@ -11,7 +11,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==========================================
-# 1. ระบบเชื่อมต่อ Google Sheets API (Cloud Ready)
+# 1. ระบบเชื่อมต่อ Google Sheets API (ฉลาดเลือก)
 # ==========================================
 SHEET_NAME = "Corp_Cert_DB"
 
@@ -22,14 +22,27 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        if "GCP_CREDENTIALS" in st.secrets:
-            creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        else:
+        # 🟢 1. เช็คก่อนว่ามีไฟล์กุญแจในเครื่องไหม (สำหรับตอนรันในคอมตัวเอง Local)
+        if os.path.exists("service_account.json"):
             creds = Credentials.from_service_account_file("service_account.json", scopes=scopes)
+            
+        # ☁️ 2. ถ้าไม่มีในเครื่อง ให้ไปดูในตู้เซฟ Secrets (สำหรับตอนรันบนเว็บ Streamlit Cloud)
+        else:
+            try:
+                if "GCP_CREDENTIALS" in st.secrets:
+                    creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
+                    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+                else:
+                    st.error("❌ ไม่พบทั้งไฟล์ service_account.json และ Secrets บน Cloud")
+                    st.stop()
+            except FileNotFoundError:
+                st.error("❌ ไม่พบไฟล์กุญแจ service_account.json ในโฟลเดอร์โปรเจกต์")
+                st.stop()
+            
         return gspread.authorize(creds)
+        
     except Exception as e:
-        st.error(f"❌ ไม่พบข้อมูลการเชื่อมต่อ Google API: {e}")
+        st.error(f"❌ เกิดข้อผิดพลาดในการเชื่อมต่อ Google API: {e}")
         st.stop()
 
 def get_records_sheet():
@@ -55,21 +68,38 @@ def save_to_db(serial, name, course, date):
 # ==========================================
 # 2. ฟังก์ชันหลักสำหรับวาดภาพเกียรติบัตร 
 # ==========================================
-def create_certificate_image(template_path, font_path, name, course_name, date_str, serial):
-    img = Image.open(template_path)
+def create_certificate_image(template_source, font_path, name, course_name, date_str, serial):
+    # รองรับทั้ง "ชื่อไฟล์" (String) และ "ไฟล์ที่อัปโหลด" (UploadedFile)
+    try:
+        img = Image.open(template_source)
+    except:
+        # ถ้าเปิดไม่ได้ ให้ลองใช้ไฟล์ Default
+        if os.path.exists("template.png"):
+            img = Image.open("template.png")
+        else:
+            st.error("❌ หาไฟล์ template.png ไม่เจอ กรุณาเอาไฟล์วางในโฟลเดอร์ด้วยครับ")
+            st.stop()
+        
     draw = ImageDraw.Draw(img)
     W, H = img.size
     
-    font_name = ImageFont.truetype(font_path, 80)    
-    font_detail = ImageFont.truetype(font_path, 40)  
-    font_serial = ImageFont.truetype(font_path, 36)
+    # กำหนดฟอนต์ (ต้องมีไฟล์ .ttf ในโฟลเดอร์)
+    try:
+        font_name = ImageFont.truetype(font_path, 80)    
+        font_detail = ImageFont.truetype(font_path, 40)  
+        font_serial = ImageFont.truetype(font_path, 36)
+    except:
+        st.error(f"❌ ไม่พบฟอนต์ {font_path} ในโฟลเดอร์")
+        st.stop()
     
+    # 1. ชื่อคน (จัดกึ่งกลาง)
     left, top, right, bottom = draw.textbbox((0, 0), name, font=font_name)
     w = right - left
     h = bottom - top
     name_y = ((H - h) / 2) - 80 
     draw.text(((W - w) / 2, name_y), name, font=font_name, fill=(0, 0, 0))
     
+    # 2. ชื่อหลักสูตร (ใต้ชื่อคน)
     lines = course_name.split('\n')
     current_y = name_y + 120 
     for line in lines:
@@ -78,9 +108,11 @@ def create_certificate_image(template_path, font_path, name, course_name, date_s
         draw.text(((W - w_line) / 2, current_y), line.strip(), font=font_detail, fill=(50, 50, 50))
         current_y += 60 
         
+    # 3. วันที่ (มุมซ้ายล่าง)
     date_text = f"ให้ไว้ ณ วันที่ {date_str}"
     draw.text((350, H - 200), date_text, font=font_serial, fill=(30, 30, 30))
     
+    # 4. รหัส Serial (มุมขวาล่าง)
     serial_text = f"Ref: {serial}"
     left, top, right, bottom = draw.textbbox((0, 0), serial_text, font=font_serial)
     w_serial = right - left
@@ -97,7 +129,9 @@ custom_css = """
 <style>
     #MainMenu {visibility: hidden;}
     [data-testid="stDeployButton"] {display:none;}
-    [data-testid="stToolbar"] {visibility: hidden !important;} 
+    
+    /* ลบบรรทัดที่สั่งซ่อน Toolbar ออกแล้ว เพื่อให้ปุ่มลูกศรกลับมาครับ */
+    
     footer {visibility: hidden;}
 
     .custom-banner {
@@ -136,18 +170,11 @@ custom_css = """
         box-shadow: 0 6px 12px rgba(0, 121, 107, 0.3) !important;
     }
 
-    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-        background-color: #ffffff;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #f0f2f6;
-    }
-
-    /* --- โค้ดที่เพิ่มใหม่: ตกแต่งกล่อง Input และ Dateให้ดู Modern --- */
+    /* Modern Inputs */
     .stTextInput > div > div > input, 
     .stDateInput > div > div > input, 
-    .stTextArea > div > div > textarea {
+    .stTextArea > div > div > textarea,
+    .stSelectbox > div > div > div {
         background-color: #f8f9fc !important;
         border: 1px solid #e2e8f0 !important;
         border-radius: 10px !important;
@@ -156,17 +183,16 @@ custom_css = """
         transition: all 0.3s ease !important;
     }
     
-    /* Effect เรืองแสงตอนคลิกพิมพ์ */
     .stTextInput > div > div > input:focus, 
     .stDateInput > div > div > input:focus, 
-    .stTextArea > div > div > textarea:focus {
+    .stTextArea > div > div > textarea:focus,
+    .stSelectbox > div > div > div:focus {
         border-color: #00796B !important;
         box-shadow: 0 0 0 3px rgba(0, 121, 107, 0.15) !important;
         background-color: #ffffff !important;
     }
     
-    /* ปรับแต่ง Label หัวข้อให้ดูโปรขึ้น */
-    .stTextArea label, .stDateInput label {
+    .stTextArea label, .stDateInput label, .stSelectbox label {
         font-weight: 600 !important;
         color: #2c3e50 !important;
         margin-bottom: 5px !important;
@@ -176,7 +202,7 @@ custom_css = """
 st.markdown(custom_css, unsafe_allow_html=True)
 
 # ==========================================
-# 🌟 ระบบ Login ด้วย Google Sheets
+# 🌟 ระบบ Login
 # ==========================================
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
@@ -199,25 +225,27 @@ if not st.session_state["logged_in"]:
             pass_input = st.text_input("🔑 รหัสผ่าน (Password):", type="password")
             
             if st.button("เข้าสู่ระบบ (Login)", type="primary", use_container_width=True):
-                users_sheet = get_users_sheet()
-                users_data = users_sheet.get_all_records()
-                
-                login_success = False
-                for u in users_data:
-                    if str(u.get('username')) == user_input and str(u.get('password')) == pass_input:
-                        login_success = True
-                        break
-                        
-                if login_success:
-                    st.session_state["logged_in"] = True
-                    st.session_state["username"] = user_input
-                    st.rerun()
-                else:
-                    st.error("❌ ชื่อผู้ใช้งาน หรือ รหัสผ่านไม่ถูกต้อง!")
+                try:
+                    users_sheet = get_users_sheet()
+                    users_data = users_sheet.get_all_records()
+                    login_success = False
+                    for u in users_data:
+                        if str(u.get('username')) == user_input and str(u.get('password')) == pass_input:
+                            login_success = True
+                            break   
+                    if login_success:
+                        st.session_state["logged_in"] = True
+                        st.session_state["username"] = user_input
+                        st.rerun()
+                    else:
+                        st.error("❌ ชื่อผู้ใช้งาน หรือ รหัสผ่านไม่ถูกต้อง!")
+                except Exception as e:
+                    st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล Login: {e}")
+                    
     st.stop()
 
 # ==========================================
-# 🌟 แถบเมนูด้านบนสุด (ปุ่ม Shutdown มุมขวา)
+# 🌟 ส่วนหัวและเมนู (Sidebar)
 # ==========================================
 st.write("<br>", unsafe_allow_html=True) 
 top_col1, top_col2, top_col3 = st.columns([7, 1, 2])
@@ -226,9 +254,6 @@ with top_col3:
         st.success("✅ กากบาท (X) ปิดหน้าต่างเบราว์เซอร์นี้ได้เลยครับ")
         time.sleep(3)
 
-# ==========================================
-# 4. เมนูนำทาง (Sidebar)
-# ==========================================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80) 
     st.success(f"👤 ผู้ใช้งาน: **{st.session_state['username']}**")
@@ -241,6 +266,35 @@ with st.sidebar:
     st.divider()
     st.markdown("### ⚙️ เมนูจัดการระบบ")
     menu = st.radio("เลือกการทำงาน:", ["🎓 ออกเกียรติบัตร", "🗄️ ฐานข้อมูล (Google Sheets)", "🔑 เปลี่ยนรหัสผ่าน"], label_visibility="collapsed")
+    
+    # --- 🌟 ส่วนอัปโหลด Template (แสดงเฉพาะหน้าออกเกียรติบัตร) ---
+    if menu == "🎓 ออกเกียรติบัตร":
+        st.divider()
+        st.markdown("### 🎨 ตั้งค่าใบเกียรติบัตร")
+        st.info("คุณสามารถอัปโหลดไฟล์ภาพพื้นหลัง (Template) ของคุณเองได้ที่นี่")
+        
+        # 1. ปุ่มโหลด Mockup
+        if os.path.exists("template.png"):
+            with open("template.png", "rb") as file:
+                st.download_button(
+                    label="⬇️ ดาวน์โหลดภาพตัวอย่าง (Mockup)",
+                    data=file,
+                    file_name="template_mockup.png",
+                    mime="image/png",
+                    help="ดาวน์โหลดไฟล์นี้ไปเป็นแบบ เพื่อดูตำแหน่งการวางข้อความ",
+                    use_container_width=True
+                )
+            
+        # 2. ปุ่มอัปโหลดไฟล์เอง
+        uploaded_template = st.file_uploader("📂 อัปโหลด Template ใหม่ (png/jpg):", type=['png', 'jpg', 'jpeg'])
+        
+        if uploaded_template is not None:
+            # ถ้ามีการอัปโหลด ให้ใช้ไฟล์นั้น
+            current_template = uploaded_template
+            st.success("✅ ใช้ Template ที่อัปโหลด")
+        else:
+            # ถ้าไม่มี ให้ใช้ไฟล์ Default (String path)
+            current_template = "template.png"
 
 # ==========================================
 # 5. หน้าจอออกเกียรติบัตร (User Mode)
@@ -272,22 +326,24 @@ if menu == "🎓 ออกเกียรติบัตร":
                     try:
                         serial = generate_serial()
                         save_to_db(serial, single_name, course_name, str(issue_date))
-                        img = create_certificate_image("template.png", "THSarabunNew.ttf", single_name, course_name, date_str_formatted, serial)
-                        st.success(f"✅ บันทึกข้อมูลลง Google Sheets สำเร็จ! รหัสอ้างอิง: {serial}")
-                        st.image(img, caption=f"ภาพตัวอย่างของ {single_name}", use_container_width=True)
+                        
+                        # สร้างภาพ (ส่ง current_template ที่เลือกไว้ใน Sidebar)
+                        img = create_certificate_image(current_template, "THSarabunNew.ttf", single_name, course_name, date_str_formatted, serial)
+                        
+                        st.success(f"✅ บันทึกข้อมูลสำเร็จ! รหัสอ้างอิง: {serial}")
+                        st.image(img, caption=f"ตัวอย่างผลลัพธ์", use_container_width=True)
                         
                         buf_png = io.BytesIO()
                         img.save(buf_png, format="PNG")
-                        
                         buf_pdf = io.BytesIO()
                         img_pdf = img.convert('RGB')
                         img_pdf.save(buf_pdf, format="PDF", resolution=100.0)
                         
                         dl_col1, dl_col2 = st.columns(2)
                         with dl_col1:
-                            st.download_button("📩 ดาวน์โหลดเป็นไฟล์รูปภาพ (PNG)", data=buf_png.getvalue(), file_name=f"Certificate_{serial}_{single_name}.png", mime="image/png", use_container_width=True)
+                            st.download_button("📩 ดาวน์โหลด (PNG)", data=buf_png.getvalue(), file_name=f"Certificate_{serial}_{single_name}.png", mime="image/png", use_container_width=True)
                         with dl_col2:
-                            st.download_button("📄 ดาวน์โหลดเป็นเอกสาร (PDF)", data=buf_pdf.getvalue(), file_name=f"Certificate_{serial}_{single_name}.pdf", mime="application/pdf", use_container_width=True)
+                            st.download_button("📄 ดาวน์โหลด (PDF)", data=buf_pdf.getvalue(), file_name=f"Certificate_{serial}_{single_name}.pdf", mime="application/pdf", use_container_width=True)
 
                     except Exception as e:
                         st.error(f"❌ เกิดข้อผิดพลาด: {e}")
@@ -306,7 +362,6 @@ if menu == "🎓 ออกเกียรติบัตร":
                     st.error("❌ ระบบหาคอลัมน์คำว่า 'Name' ไม่เจอครับ")
                 else:
                     st.success(f"✅ โหลดไฟล์สำเร็จ! พบผู้เข้าอบรมทั้งหมด: **{len(df)}** ท่าน")
-                    
                     st.markdown("**📋 ตารางตัวอย่างรายชื่อจากไฟล์ Excel:**")
                     st.dataframe(df.head(5), use_container_width=True)
                     
@@ -320,8 +375,9 @@ if menu == "🎓 ออกเกียรติบัตร":
                         if st.button("🔎 ดูภาพตัวอย่าง (รายชื่อที่ 1)"):
                             try:
                                 preview_name = str(df.iloc[0]['Name']).strip()
-                                img_preview = create_certificate_image("template.png", "THSarabunNew.ttf", preview_name, course_name, date_str_formatted, "CERT-PREVIEW-001")
-                                st.image(img_preview, caption="ตัวอย่างการจัดวาง", use_container_width=True)
+                                # พรีวิวโดยใช้ Template ที่เลือก
+                                img_preview = create_certificate_image(current_template, "THSarabunNew.ttf", preview_name, course_name, date_str_formatted, "CERT-PREVIEW-001")
+                                st.image(img_preview, caption=f"ตัวอย่างการจัดวาง", use_container_width=True)
                             except Exception as e:
                                 st.error(f"เกิดข้อผิดพลาด: {e}")
                     
@@ -332,11 +388,11 @@ if menu == "🎓 ออกเกียรติบัตร":
                         zip_buffer = io.BytesIO()
                         
                         try:
+                            # เตรียมข้อมูลรันเลข Batch
                             sheet = get_records_sheet()
                             records = sheet.get_all_records()
                             prefix = f"CERT-{datetime.datetime.now().strftime('%Y%m')}"
                             current_count = sum(1 for r in records if str(r.get('serial_number', '')).startswith(prefix))
-                            
                             new_db_rows = [] 
                             
                             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -347,11 +403,17 @@ if menu == "🎓 ออกเกียรติบัตร":
                                     
                                     current_count += 1
                                     serial = f"{prefix}-{current_count:04d}"
-                                    
                                     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                     new_db_rows.append([serial, name, course_name, str(issue_date), timestamp])
                                     
-                                    img = create_certificate_image("template.png", "THSarabunNew.ttf", name, course_name, date_str_formatted, serial)
+                                    # จัดการ Pointer ของไฟล์ Template (สำคัญมากกรณีไฟล์อัปโหลด)
+                                    if uploaded_template:
+                                        uploaded_template.seek(0)
+                                        template_source_for_func = uploaded_template
+                                    else:
+                                        template_source_for_func = current_template
+
+                                    img = create_certificate_image(template_source_for_func, "THSarabunNew.ttf", name, course_name, date_str_formatted, serial)
                                     
                                     img_buffer = io.BytesIO()
                                     if "PDF" in export_format:
@@ -365,6 +427,7 @@ if menu == "🎓 ออกเกียรติบัตร":
                                     percent_complete = int(((index + 1) / total_rows) * 100)
                                     my_bar.progress(percent_complete, text=f"กำลังสร้าง: {name} ({index+1}/{total_rows})")
                             
+                            # บันทึกลง Google Sheets ทีเดียว
                             if new_db_rows:
                                 my_bar.progress(99, text="กำลังอัปเดตฐานข้อมูล Google Sheets...")
                                 sheet.append_rows(new_db_rows)
@@ -376,7 +439,7 @@ if menu == "🎓 ออกเกียรติบัตร":
                             st.error(f"❌ เกิดข้อผิดพลาด: {e}")
 
 # ==========================================
-# 6. หน้าจอ Admin CRUD (Sync with Google Sheets)
+# 6. หน้าจอ Admin CRUD
 # ==========================================
 elif menu == "🗄️ ฐานข้อมูล (Google Sheets)":
     st.markdown("""
@@ -390,14 +453,11 @@ elif menu == "🗄️ ฐานข้อมูล (Google Sheets)":
         st.info("💡 เมื่อกดบันทึก ข้อมูลใน Google Sheets จะถูกอัปเดตใหม่ทั้งหมดตามตารางนี้")
         sheet = get_records_sheet()
         records = sheet.get_all_records()
-        
         if records:
             df_db = pd.DataFrame(records)
         else:
             df_db = pd.DataFrame(columns=["serial_number", "full_name", "course_name", "issue_date", "created_at"])
-            
         edited_df = st.data_editor(df_db, num_rows="dynamic", use_container_width=True, key="db_editor", height=500)
-        
         if st.button("💾 บันทึกทับข้อมูลลง Google Sheets", type="primary"):
             sheet.clear()
             sheet.append_row(list(edited_df.columns))
@@ -406,7 +466,7 @@ elif menu == "🗄️ ฐานข้อมูล (Google Sheets)":
             st.success("✅ อัปเดตข้อมูลขึ้น Google Sheets สำเร็จ!")
 
 # ==========================================
-# 7. หน้าจอเปลี่ยนรหัสผ่าน (Google Sheets)
+# 7. หน้าจอเปลี่ยนรหัสผ่าน
 # ==========================================
 elif menu == "🔑 เปลี่ยนรหัสผ่าน":
     st.markdown("""
@@ -429,7 +489,6 @@ elif menu == "🔑 เปลี่ยนรหัสผ่าน":
             else:
                 users_sheet = get_users_sheet()
                 users_data = users_sheet.get_all_records()
-                
                 found = False
                 for i, u in enumerate(users_data):
                     if str(u.get('username')) == st.session_state["username"] and str(u.get('password')) == old_pass:
@@ -437,6 +496,5 @@ elif menu == "🔑 เปลี่ยนรหัสผ่าน":
                         st.success("✅ เปลี่ยนรหัสผ่านและบันทึกลง Google Sheets เรียบร้อยแล้ว!")
                         found = True
                         break
-                
                 if not found:
                     st.error("❌ รหัสผ่านเดิมไม่ถูกต้อง!")
