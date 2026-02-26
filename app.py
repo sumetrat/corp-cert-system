@@ -11,7 +11,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==========================================
-# 1. ระบบเชื่อมต่อ Google Sheets API (ฉลาดเลือก)
+# 1. ระบบเชื่อมต่อ Google Sheets API
 # ==========================================
 SHEET_NAME = "Corp_Cert_DB"
 
@@ -22,10 +22,8 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        # 🟢 1. เช็ค Local
         if os.path.exists("service_account.json"):
             creds = Credentials.from_service_account_file("service_account.json", scopes=scopes)
-        # ☁️ 2. เช็ค Cloud Secrets
         else:
             try:
                 if "GCP_CREDENTIALS" in st.secrets:
@@ -63,11 +61,10 @@ def save_to_db(serial, name, course, date):
     sheet.append_row([serial, name, course, date, timestamp])
 
 # ==========================================
-# 2. ฟังก์ชันวาดภาพ (รองรับการปรับขนาด/ตัวหนา)
+# 2. ฟังก์ชันวาดภาพ (เพิ่ม course_y_adjust)
 # ==========================================
 def create_certificate_image(template_source, name, course_name, date_str, serial,
-                             name_size, course_size, name_y_adjust, is_name_bold):
-    # รองรับทั้ง File Uploader และ Path String
+                             name_size, course_size, name_y_adjust, course_y_adjust, is_name_bold):
     try:
         img = Image.open(template_source)
     except:
@@ -81,19 +78,18 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
     
     # --- ตั้งค่าฟอนต์ ---
     font_regular_path = "THSarabunNew.ttf"
-    font_bold_path = "THSarabunNew Bold.ttf" # ต้องมีไฟล์นี้บน GitHub ถ้าอยากได้ตัวหนาจริง
+    font_bold_path = "THSarabunNew Bold.ttf" 
     
-    # 1. จัดการฟอนต์ชื่อ (Name)
+    # 1. ฟอนต์ชื่อ (Name)
     try:
         if is_name_bold and os.path.exists(font_bold_path):
             font_name = ImageFont.truetype(font_bold_path, name_size)
         else:
             font_name = ImageFont.truetype(font_regular_path, name_size)
     except:
-        # กันเหนียว ถ้าหาไฟล์ไม่เจอเลย
         font_name = ImageFont.load_default()
 
-    # 2. จัดการฟอนต์รายละเอียด (Course)
+    # 2. ฟอนต์รายละเอียด (Course)
     try:
         font_detail = ImageFont.truetype(font_regular_path, course_size)
         font_serial = ImageFont.truetype(font_regular_path, 36)
@@ -105,21 +101,19 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
     left, top, right, bottom = draw.textbbox((0, 0), name, font=font_name)
     w = right - left
     h = bottom - top
-    # คำนวณตำแหน่ง Y กึ่งกลาง + ค่าที่ผู้ใช้ปรับเอง (name_y_adjust)
-    # -80 คือค่า Default เดิมที่เคยตั้งไว้
+    # คำนวณตำแหน่ง Y + ค่าปรับเลื่อน (name_y_adjust)
     name_y = ((H - h) / 2) - 80 + name_y_adjust 
     draw.text(((W - w) / 2, name_y), name, font=font_name, fill=(0, 0, 0))
     
     # --- วาดรายละเอียด (Course) ---
     lines = course_name.split('\n')
-    # ระยะห่างจากชื่อคนลงมาบรรทัดแรกของ Course (ปรับตามขนาดฟอนต์)
-    current_y = name_y + name_size + 20 
+    # ระยะห่างจากชื่อคนลงมา (Auto ตามขนาดฟอนต์) + ค่าปรับเลื่อนรายละเอียด (course_y_adjust)
+    current_y = name_y + name_size + 20 + course_y_adjust
     
     for line in lines:
         left, top, right, bottom = draw.textbbox((0, 0), line.strip(), font=font_detail)
         w_line = right - left
         draw.text(((W - w_line) / 2, current_y), line.strip(), font=font_detail, fill=(50, 50, 50))
-        # ระยะห่างระหว่างบรรทัด
         current_y += (course_size + 15) 
         
     # --- วาดวันที่ & Serial ---
@@ -144,7 +138,6 @@ custom_css = """
     [data-testid="stDeployButton"] {display:none;}
     footer {visibility: hidden;}
     
-    /* Modern Inputs */
     .stTextInput > div > div > input, 
     .stDateInput > div > div > input, 
     .stTextArea > div > div > textarea,
@@ -209,7 +202,6 @@ with st.sidebar:
     
     menu = st.radio("เลือกเมนู:", ["🎓 ออกเกียรติบัตร", "🗄️ ฐานข้อมูล", "🔑 เปลี่ยนรหัสผ่าน"])
     
-    # --- ส่วนตั้งค่าเฉพาะหน้าออกเกียรติบัตร ---
     if menu == "🎓 ออกเกียรติบัตร":
         st.divider()
         st.markdown("### 🎨 1. ตั้งค่า Template")
@@ -222,10 +214,13 @@ with st.sidebar:
         st.caption("👤 **ส่วนชื่อ-นามสกุล**")
         name_font_size = st.slider("ขนาดชื่อ:", 50, 200, 100)
         name_is_bold = st.checkbox("ตัวหนา (Bold)", value=True)
-        name_y_adjust = st.slider("เลื่อนตำแหน่งแนวตั้ง (Y):", -200, 200, 0, help="ลบ=ขึ้นบน, บวก=ลงล่าง")
+        # Slider เลื่อนชื่อ (Y)
+        name_y_adjust = st.slider("เลื่อนตำแหน่งชื่อ (Y):", -200, 200, 0, help="ลบ=ขึ้นบน, บวก=ลงล่าง")
         
         st.caption("📝 **ส่วนรายละเอียดหลักสูตร**")
         course_font_size = st.slider("ขนาดรายละเอียด:", 30, 100, 50)
+        # Slider เลื่อนรายละเอียด (Y Adjustment)
+        course_y_adjust = st.slider("ระยะห่างจากชื่อ (Y):", -100, 100, 0, help="ปรับระยะห่างระหว่างชื่อกับรายละเอียด")
 
 # ==========================================
 # 5. หน้าจอออกเกียรติบัตร
@@ -241,35 +236,32 @@ if menu == "🎓 ออกเกียรติบัตร":
     
     tab1, tab2 = st.tabs(["👤 รายบุคคล (Preview)", "📁 แบบกลุ่ม (Excel Batch)"])
     
-    # --- Tab 1: Single & Preview ---
+    # --- Tab 1: Single ---
     with tab1:
         single_name = st.text_input("ชื่อ-นามสกุล ผู้รับ:")
         if st.button("✨ ดูตัวอย่าง / สร้างไฟล์", type="primary"):
             if single_name and course_name:
-                # สร้างภาพโดยใช้ค่าจาก Sidebar
+                # ส่งค่า Setting ใหม่ (course_y_adjust) เข้าไปด้วย
                 img = create_certificate_image(
                     current_template, single_name, course_name, date_str_formatted, "PREVIEW-001",
-                    name_font_size, course_font_size, name_y_adjust, name_is_bold
+                    name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
                 )
                 
                 if img:
                     st.image(img, caption="ภาพตัวอย่าง (ปรับแก้ที่เมนูซ้ายมือ)", use_container_width=True)
                     
-                    # ปุ่ม Save จริง (แยกออกมาเพื่อให้ User มั่นใจก่อนบันทึก)
                     col_save, col_cancel = st.columns([1,2])
                     with col_save:
                         if st.button("💾 ยืนยันบันทึกข้อมูล"):
                             try:
                                 serial = generate_serial()
                                 save_to_db(serial, single_name, course_name, str(issue_date))
-                                # สร้างภาพจริงด้วย Serial จริง
                                 img_final = create_certificate_image(
                                     current_template, single_name, course_name, date_str_formatted, serial,
-                                    name_font_size, course_font_size, name_y_adjust, name_is_bold
+                                    name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
                                 )
                                 st.success(f"✅ บันทึกสำเร็จ! Ref: {serial}")
                                 
-                                # Prepare Download
                                 buf_png = io.BytesIO()
                                 img_final.save(buf_png, format="PNG")
                                 st.download_button("📩 โหลดภาพ (PNG)", data=buf_png.getvalue(), file_name=f"{serial}.png", mime="image/png")
@@ -278,9 +270,9 @@ if menu == "🎓 ออกเกียรติบัตร":
             else:
                 st.warning("กรุณากรอกข้อมูลให้ครบครับ")
 
-    # --- Tab 2: Batch Excel ---
+    # --- Tab 2: Batch ---
     with tab2:
-        st.info("💡 การสร้างแบบกลุ่ม จะใช้การตั้งค่าฟอนต์จากเมนูซ้ายมือ ณ ขณะนี้")
+        st.info("💡 การสร้างแบบกลุ่ม จะใช้การตั้งค่าฟอนต์และตำแหน่งจากเมนูซ้ายมือ ณ ขณะนี้")
         uploaded_excel = st.file_uploader("Upload Excel (ต้องมีช่อง Name)", type=["xlsx"])
         
         if uploaded_excel and st.button("🚀 รันระบบ Batch (สร้างไฟล์ ZIP)"):
@@ -292,7 +284,6 @@ if menu == "🎓 ออกเกียรติบัตร":
                 zip_buffer = io.BytesIO()
                 new_db_rows = []
                 
-                # เตรียมข้อมูล Serial
                 sheet = get_records_sheet()
                 records = sheet.get_all_records()
                 prefix = f"CERT-{datetime.datetime.now().strftime('%Y%m')}"
@@ -307,31 +298,27 @@ if menu == "🎓 ออกเกียรติบัตร":
                         current_count += 1
                         serial = f"{prefix}-{current_count:04d}"
                         
-                        # Prepare DB Data
                         timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         new_db_rows.append([serial, name, course_name, str(issue_date), timestamp])
                         
-                        # Handle Template Pointer
                         if uploaded_template:
                             uploaded_template.seek(0)
                             tmpl = uploaded_template
                         else:
                             tmpl = current_template
                             
-                        # Generate Image (ใช้ค่าจาก Sidebar)
+                        # สร้างภาพโดยใช้ค่าปรับตำแหน่งจาก Sidebar
                         img = create_certificate_image(
                             tmpl, name, course_name, date_str_formatted, serial,
-                            name_font_size, course_font_size, name_y_adjust, name_is_bold
+                            name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
                         )
                         
-                        # Save to ZIP
                         img_buf = io.BytesIO()
                         img.save(img_buf, format="PNG")
                         zip_file.writestr(f"{serial}_{name}.png", img_buf.getvalue())
                         
                         progress_bar.progress((i + 1) / total, text=f"Creating: {name}")
                 
-                # Update Google Sheets
                 if new_db_rows:
                     sheet.append_rows(new_db_rows)
                 
@@ -339,7 +326,7 @@ if menu == "🎓 ออกเกียรติบัตร":
                 st.download_button("⬇️ ดาวน์โหลด ZIP", data=zip_buffer.getvalue(), file_name="Certificates.zip", mime="application/zip")
 
 # ==========================================
-# 6. Admin Database & Password
+# 6. Admin & Other Menus
 # ==========================================
 elif menu == "🗄️ ฐานข้อมูล":
     st.title("🗄️ Database Management")
