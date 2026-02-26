@@ -61,7 +61,7 @@ def save_to_db(serial, name, course, date):
     sheet.append_row([serial, name, course, date, timestamp])
 
 # ==========================================
-# 2. ฟังก์ชันวาดภาพ
+# 2. ฟังก์ชันวาดภาพ (ปรับปรุงใหม่: แยกอิสระ)
 # ==========================================
 def create_certificate_image(template_source, name, course_name, date_str, serial,
                              name_size, course_size, name_y_adjust, course_y_adjust, is_name_bold):
@@ -98,6 +98,7 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
         font_serial = ImageFont.load_default()
     
     # --- วาดชื่อคน (Name) ---
+    # อ้างอิงจากกึ่งกลางภาพ (H/2) ลบด้วย 80 แล้วบวกค่าปรับจูน
     left, top, right, bottom = draw.textbbox((0, 0), name, font=font_name)
     w = right - left
     h = bottom - top
@@ -105,9 +106,12 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
     draw.text(((W - w) / 2, name_y), name, font=font_name, fill=(0, 0, 0))
     
     # --- วาดรายละเอียด (Course) ---
-    lines = course_name.split('\n')
-    current_y = name_y + name_size + 20 + course_y_adjust
+    # 🟢 แก้ไขใหม่: ไม่อ้างอิง name_y แล้ว!
+    # อ้างอิงจากกึ่งกลางภาพ (H/2) บวกด้วย 50 (ให้เริ่มต่ำกว่ากลางภาพนิดหน่อย) แล้วบวกค่าปรับจูน
+    base_course_y = (H / 2) + 50 
+    current_y = base_course_y + course_y_adjust
     
+    lines = course_name.split('\n')
     for line in lines:
         left, top, right, bottom = draw.textbbox((0, 0), line.strip(), font=font_detail)
         w_line = right - left
@@ -212,11 +216,12 @@ with st.sidebar:
         st.caption("👤 **ส่วนชื่อ-นามสกุล**")
         name_font_size = st.slider("ขนาดชื่อ:", 50, 300, 100)
         name_is_bold = st.checkbox("ตัวหนา (Bold)", value=True)
-        name_y_adjust = st.slider("เลื่อนตำแหน่งชื่อ (Y):", -1000, 1000, 0, help="ลบ=ขึ้นบน, บวก=ลงล่าง")
+        name_y_adjust = st.slider("ตำแหน่งชื่อ (จากกึ่งกลาง):", -1000, 1000, 0, help="ลบ=เลื่อนขึ้น, บวก=เลื่อนลง")
         
         st.caption("📝 **ส่วนรายละเอียดหลักสูตร**")
         course_font_size = st.slider("ขนาดรายละเอียด:", 30, 150, 50)
-        course_y_adjust = st.slider("ระยะห่างจากชื่อ (Y):", -500, 500, 0)
+        # 🟢 เปลี่ยนคำอธิบายใหม่ เพื่อให้เข้าใจว่า "อิสระ" แล้ว
+        course_y_adjust = st.slider("ตำแหน่งรายละเอียด (จากกึ่งกลาง):", -1000, 1000, 0, help="ปรับตำแหน่งอิสระ ไม่เกี่ยวกับชื่อแล้ว")
 
 # ==========================================
 # 5. หน้าจอออกเกียรติบัตร
@@ -236,7 +241,6 @@ if menu == "🎓 ออกเกียรติบัตร":
     with tab1:
         single_name = st.text_input("ชื่อ-นามสกุล ผู้รับ:")
         
-        # 🟢 ตัวเลือกไฟล์ (Checkbox)
         st.write("เลือกประเภทไฟล์ที่ต้องการดาวน์โหลด:")
         col_c1, col_c2 = st.columns(2)
         with col_c1: need_png = st.checkbox("ไฟล์รูปภาพ (PNG)", value=True, key="s_png")
@@ -252,7 +256,7 @@ if menu == "🎓 ออกเกียรติบัตร":
                         current_template, single_name, course_name, date_str_formatted, "PREVIEW-001",
                         name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
                     )
-                    st.image(img, caption="ภาพตัวอย่าง (ยังไม่บันทึก)", use_container_width=True)
+                    st.image(img, caption="ภาพตัวอย่าง (ตำแหน่งอิสระ)", use_container_width=True)
                 else:
                     st.warning("กรุณากรอกข้อมูลให้ครบ")
 
@@ -260,7 +264,7 @@ if menu == "🎓 ออกเกียรติบัตร":
         with col_save:
             if st.button("💾 บันทึกและสร้างไฟล์จริง", type="primary", use_container_width=True):
                 if not need_png and not need_pdf:
-                    st.warning("⚠️ กรุณาเลือกประเภทไฟล์อย่างน้อย 1 อย่างครับ (PNG หรือ PDF)")
+                    st.warning("⚠️ กรุณาเลือกประเภทไฟล์อย่างน้อย 1 อย่างครับ")
                 elif single_name and course_name:
                     try:
                         serial = generate_serial()
@@ -273,7 +277,6 @@ if menu == "🎓 ออกเกียรติบัตร":
                         
                         st.success(f"✅ บันทึกสำเร็จ! Ref: {serial}")
                         
-                        # แสดงปุ่มตามที่ติ๊กเลือก
                         if need_png:
                             buf_png = io.BytesIO()
                             img_final.save(buf_png, format="PNG")
@@ -291,10 +294,9 @@ if menu == "🎓 ออกเกียรติบัตร":
 
     # --- Tab 2: Batch ---
     with tab2:
-        st.info("💡 ระบบจะใช้การตั้งค่าฟอนต์จากเมนูซ้ายมือ")
+        st.info("💡 ระบบจะใช้การตั้งค่าฟอนต์และตำแหน่งจากเมนูซ้ายมือ")
         uploaded_excel = st.file_uploader("Upload Excel (ต้องมีช่อง Name)", type=["xlsx"])
         
-        # 🟢 ตัวเลือกไฟล์ (Checkbox) สำหรับ Batch
         st.write("เลือกประเภทไฟล์ที่ต้องการใน ZIP (เลือกได้ทั้งคู่):")
         col_b1, col_b2 = st.columns(2)
         with col_b1: batch_png = st.checkbox("ไฟล์รูปภาพ (PNG)", value=True, key="b_png")
@@ -339,13 +341,11 @@ if menu == "🎓 ออกเกียรติบัตร":
                                 name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
                             )
                             
-                            # บันทึกตามที่เลือก (PNG)
                             if batch_png:
                                 img_buf = io.BytesIO()
                                 img.save(img_buf, format="PNG")
                                 zip_file.writestr(f"{serial}_{name}.png", img_buf.getvalue())
 
-                            # บันทึกตามที่เลือก (PDF)
                             if batch_pdf:
                                 pdf_buf = io.BytesIO()
                                 img.convert('RGB').save(pdf_buf, format="PDF")
