@@ -61,7 +61,7 @@ def save_to_db(serial, name, course, date):
     sheet.append_row([serial, name, course, date, timestamp])
 
 # ==========================================
-# 2. ฟังก์ชันวาดภาพ (ปรับปรุงใหม่: แยกอิสระ)
+# 2. ฟังก์ชันวาดภาพ
 # ==========================================
 def create_certificate_image(template_source, name, course_name, date_str, serial,
                              name_size, course_size, name_y_adjust, course_y_adjust, is_name_bold):
@@ -76,11 +76,9 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
     draw = ImageDraw.Draw(img)
     W, H = img.size
     
-    # --- ตั้งค่าฟอนต์ ---
     font_regular_path = "THSarabunNew.ttf"
     font_bold_path = "THSarabunNew Bold.ttf" 
     
-    # 1. ฟอนต์ชื่อ (Name)
     try:
         if is_name_bold and os.path.exists(font_bold_path):
             font_name = ImageFont.truetype(font_bold_path, name_size)
@@ -89,7 +87,6 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
     except:
         font_name = ImageFont.load_default()
 
-    # 2. ฟอนต์รายละเอียด (Course)
     try:
         font_detail = ImageFont.truetype(font_regular_path, course_size)
         font_serial = ImageFont.truetype(font_regular_path, 36)
@@ -97,20 +94,16 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
         font_detail = ImageFont.load_default()
         font_serial = ImageFont.load_default()
     
-    # --- วาดชื่อคน (Name) ---
-    # อ้างอิงจากกึ่งกลางภาพ (H/2) ลบด้วย 80 แล้วบวกค่าปรับจูน
+    # วาดชื่อ
     left, top, right, bottom = draw.textbbox((0, 0), name, font=font_name)
     w = right - left
     h = bottom - top
     name_y = ((H - h) / 2) - 80 + name_y_adjust 
     draw.text(((W - w) / 2, name_y), name, font=font_name, fill=(0, 0, 0))
     
-    # --- วาดรายละเอียด (Course) ---
-    # 🟢 แก้ไขใหม่: ไม่อ้างอิง name_y แล้ว!
-    # อ้างอิงจากกึ่งกลางภาพ (H/2) บวกด้วย 50 (ให้เริ่มต่ำกว่ากลางภาพนิดหน่อย) แล้วบวกค่าปรับจูน
+    # วาดรายละเอียด
     base_course_y = (H / 2) + 50 
     current_y = base_course_y + course_y_adjust
-    
     lines = course_name.split('\n')
     for line in lines:
         left, top, right, bottom = draw.textbbox((0, 0), line.strip(), font=font_detail)
@@ -118,7 +111,7 @@ def create_certificate_image(template_source, name, course_name, date_str, seria
         draw.text(((W - w_line) / 2, current_y), line.strip(), font=font_detail, fill=(50, 50, 50))
         current_y += (course_size + 15) 
         
-    # --- วาดวันที่ & Serial ---
+    # วาดวันที่ & Serial
     date_text = f"ให้ไว้ ณ วันที่ {date_str}"
     draw.text((350, H - 200), date_text, font=font_serial, fill=(30, 30, 30))
     
@@ -216,12 +209,11 @@ with st.sidebar:
         st.caption("👤 **ส่วนชื่อ-นามสกุล**")
         name_font_size = st.slider("ขนาดชื่อ:", 50, 300, 100)
         name_is_bold = st.checkbox("ตัวหนา (Bold)", value=True)
-        name_y_adjust = st.slider("ตำแหน่งชื่อ (จากกึ่งกลาง):", -1000, 1000, 0, help="ลบ=เลื่อนขึ้น, บวก=เลื่อนลง")
+        name_y_adjust = st.slider("ตำแหน่งชื่อ (จากกึ่งกลาง):", -1000, 1000, 0)
         
         st.caption("📝 **ส่วนรายละเอียดหลักสูตร**")
         course_font_size = st.slider("ขนาดรายละเอียด:", 30, 150, 50)
-        # 🟢 เปลี่ยนคำอธิบายใหม่ เพื่อให้เข้าใจว่า "อิสระ" แล้ว
-        course_y_adjust = st.slider("ตำแหน่งรายละเอียด (จากกึ่งกลาง):", -1000, 1000, 0, help="ปรับตำแหน่งอิสระ ไม่เกี่ยวกับชื่อแล้ว")
+        course_y_adjust = st.slider("ตำแหน่งรายละเอียด (จากกึ่งกลาง):", -1000, 1000, 0)
 
 # ==========================================
 # 5. หน้าจอออกเกียรติบัตร
@@ -231,70 +223,70 @@ if menu == "🎓 ออกเกียรติบัตร":
     
     with st.container(border=True):
         col1, col2 = st.columns([2, 1])
-        course_name = col1.text_area("📌 รายละเอียดหลักสูตร:", height=115)
+        course_name = col1.text_area("📌 รายละเอียดหลักสูตร (แก้ไขเพื่อดู Live Preview):", height=115)
         issue_date = col2.date_input("🗓️ วันที่:")
         date_str_formatted = issue_date.strftime('%d/%m/%Y')
     
-    tab1, tab2 = st.tabs(["👤 รายบุคคล (Preview & Save)", "📁 แบบกลุ่ม (Excel Batch)"])
+    tab1, tab2 = st.tabs(["⚡ รายบุคคล (Live Preview)", "📁 แบบกลุ่ม (Excel Batch)"])
     
-    # --- Tab 1: Single ---
+    # --- Tab 1: Single (Live Preview) ---
     with tab1:
-        single_name = st.text_input("ชื่อ-นามสกุล ผู้รับ:")
+        st.markdown("##### ⚡ Live Preview (ภาพจะอัปเดตอัตโนมัติเมื่อพิมพ์หรือเลื่อนสไลด์)")
         
-        st.write("เลือกประเภทไฟล์ที่ต้องการดาวน์โหลด:")
+        # ใส่ชื่อทดสอบไว้ให้เลย จะได้เห็นภาพตั้งแต่ตอนแรก
+        single_name = st.text_input("ชื่อ-นามสกุล ผู้รับ:", value="นาย/นางสาว ทดสอบ ระบบ")
+        
+        st.write("เลือกประเภทไฟล์ที่ต้องการดาวน์โหลด (เมื่อกดบันทึก):")
         col_c1, col_c2 = st.columns(2)
         with col_c1: need_png = st.checkbox("ไฟล์รูปภาพ (PNG)", value=True, key="s_png")
         with col_c2: need_pdf = st.checkbox("ไฟล์เอกสาร (PDF)", value=False, key="s_pdf")
 
-        col_preview, col_save = st.columns(2)
-        
-        # 1. Preview
-        with col_preview:
-            if st.button("✨ ดูตัวอย่าง (Preview)", use_container_width=True):
-                if single_name and course_name:
-                    img = create_certificate_image(
-                        current_template, single_name, course_name, date_str_formatted, "PREVIEW-001",
-                        name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
-                    )
-                    st.image(img, caption="ภาพตัวอย่าง (ตำแหน่งอิสระ)", use_container_width=True)
-                else:
-                    st.warning("กรุณากรอกข้อมูลให้ครบ")
-
-        # 2. Save
-        with col_save:
-            if st.button("💾 บันทึกและสร้างไฟล์จริง", type="primary", use_container_width=True):
-                if not need_png and not need_pdf:
-                    st.warning("⚠️ กรุณาเลือกประเภทไฟล์อย่างน้อย 1 อย่างครับ")
-                elif single_name and course_name:
-                    try:
-                        serial = generate_serial()
-                        save_to_db(serial, single_name, course_name, str(issue_date))
-                        
-                        img_final = create_certificate_image(
-                            current_template, single_name, course_name, date_str_formatted, serial,
-                            name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
-                        )
-                        
-                        st.success(f"✅ บันทึกสำเร็จ! Ref: {serial}")
-                        
-                        if need_png:
-                            buf_png = io.BytesIO()
-                            img_final.save(buf_png, format="PNG")
-                            st.download_button("📩 ดาวน์โหลด (PNG)", data=buf_png.getvalue(), file_name=f"{serial}.png", mime="image/png", use_container_width=True)
-                        
-                        if need_pdf:
-                            buf_pdf = io.BytesIO()
-                            img_final.convert('RGB').save(buf_pdf, format="PDF")
-                            st.download_button("📄 ดาวน์โหลด (PDF)", data=buf_pdf.getvalue(), file_name=f"{serial}.pdf", mime="application/pdf", use_container_width=True)
-                        
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("กรุณากรอกข้อมูลให้ครบ")
+        # 🟢 Live Preview System: ทำงานตลอดเวลาที่มีชื่อและหลักสูตร
+        if single_name and course_name:
+            # วาดภาพโชว์สดๆ ทันที ไม่ต้องรอปุ่มกด
+            img_preview = create_certificate_image(
+                current_template, single_name, course_name, date_str_formatted, "PREVIEW-001",
+                name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
+            )
+            
+            if img_preview:
+                st.image(img_preview, caption="👀 ภาพอัปเดตแบบ Real-time ตามการปรับแต่ง", use_container_width=True)
+                
+                # 🟢 ปุ่ม Save 
+                if st.button("💾 บันทึกข้อมูลและสร้างไฟล์จริง", type="primary", use_container_width=True):
+                    if not need_png and not need_pdf:
+                        st.warning("⚠️ กรุณาเลือกประเภทไฟล์อย่างน้อย 1 อย่างครับ")
+                    else:
+                        try:
+                            serial = generate_serial()
+                            save_to_db(serial, single_name, course_name, str(issue_date))
+                            
+                            # วาดภาพฉบับจริง (ใส่ Serial จริง)
+                            img_final = create_certificate_image(
+                                current_template, single_name, course_name, date_str_formatted, serial,
+                                name_font_size, course_font_size, name_y_adjust, course_y_adjust, name_is_bold
+                            )
+                            
+                            st.success(f"✅ บันทึกสำเร็จ! Ref: {serial}")
+                            
+                            if need_png:
+                                buf_png = io.BytesIO()
+                                img_final.save(buf_png, format="PNG")
+                                st.download_button("📩 ดาวน์โหลด (PNG)", data=buf_png.getvalue(), file_name=f"{serial}.png", mime="image/png", use_container_width=True)
+                            
+                            if need_pdf:
+                                buf_pdf = io.BytesIO()
+                                img_final.convert('RGB').save(buf_pdf, format="PDF")
+                                st.download_button("📄 ดาวน์โหลด (PDF)", data=buf_pdf.getvalue(), file_name=f"{serial}.pdf", mime="application/pdf", use_container_width=True)
+                            
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+        else:
+            st.info("💡 กรุณาพิมพ์ชื่อและรายละเอียดหลักสูตรเพื่อดูภาพตัวอย่างครับ")
 
     # --- Tab 2: Batch ---
     with tab2:
-        st.info("💡 ระบบจะใช้การตั้งค่าฟอนต์และตำแหน่งจากเมนูซ้ายมือ")
+        st.info("💡 ระบบจะใช้การตั้งค่าฟอนต์และตำแหน่งที่ท่านปรับแต่งล่าสุด (ดูจาก Live Preview ได้เลย)")
         uploaded_excel = st.file_uploader("Upload Excel (ต้องมีช่อง Name)", type=["xlsx"])
         
         st.write("เลือกประเภทไฟล์ที่ต้องการใน ZIP (เลือกได้ทั้งคู่):")
